@@ -1,9 +1,9 @@
-from re import M
-import re
 import pandas as pd
 import json
 from datetime import datetime
-
+import gspread
+import df2gspread.df2gspread as d2g
+from oauth2client.service_account import ServiceAccountCredentials
 
 
 def toDate(date_string):
@@ -62,10 +62,8 @@ results = pd.concat(frames)
 # join results and lifters
 
 data = results.merge(lifters, how="left", left_on="lifter_id", right_on="id")
-print(data)
 
-
-# generate records
+# set up weight classes and categories
 
 female_classes = [47, 52, 57, 63, 69, 76, 84]
 male_classes = [59, 66, 74, 83, 93, 105, 120]
@@ -85,14 +83,17 @@ male_classes = class_boundaries_to_classes (male_classes)
 sexes = ['M', 'F']
 classes = {'M': male_classes, 'F':female_classes}
 statuses = ['student', 'alumni']
+
+# generate records
+
 record_dump = []
 record_log = []
 
 record_columns = ['sex', 'status', 'weightclass', 'lift', 'fullName', 'liftKg', 'date']
 old_records  = pd.read_csv('records.csv', names=record_columns)
 
-for sex in sexes:
-    for status in statuses:
+for status in statuses:
+    for sex in sexes:
         for weight_class in classes[sex]:
 
                 valid_results = data[
@@ -114,7 +115,7 @@ for sex in sexes:
                     
                     oldKg = 0
                     for index,row in old.iterrows():
-                        oldKg = row['liftKg']
+                        oldKg = float(row['liftKg'])
 
                     # compute new record
                     maxes = valid_results[valid_results[lift]==valid_results[lift].max()]
@@ -123,7 +124,7 @@ for sex in sexes:
                         record = [sex, status, weight_class[0], lift, row['fullName'], row[lift], row['meetDate']]
                         record_dump.append(record)
                         if row[lift] > float(oldKg):
-                            record_log.append(f"{row['meetDate']}: New {status} {sex}{weight_class[0]} record of {row[lift]} (+{row[lift]-oldKg}) by {row['fullName']} at {row['meetName']}")
+                            record_log.append(f"{row['meetDate']}: New {status} {sex}{weight_class[0]} record of {row[lift]}kg (+{row[lift]-oldKg}kg) by {row['fullName']} at {row['meetName']}")
 
 # dump record and logs to file
 records=pd.DataFrame(data=record_dump, columns=record_columns)
@@ -132,3 +133,58 @@ records.to_csv('records.csv')
 with open('log.txt', 'w') as f:
     for item in record_log:
         f.write("%s\n" % item)
+
+
+# render records
+
+tables = []
+render_columns = ['class', 's_lifter', 's_record', 's_year', 'b_lifter', 'b_record', 'b_year', 'd_lifter', 'd_record', 'd_year', 't_lifter', 't_record', 't_year']
+for status in statuses:
+    for sex in sexes:
+        table = []
+        for weight_class in classes[sex]:
+            row =  [weight_class[0]]
+            for lift in lifts:
+
+                record = records[
+                    (records['sex']==sex) &
+                    (records['status']==status) &
+                    (records['weightclass']==weight_class[0]) &
+                    (records['lift']==lift)]
+
+                if record.shape[0] == 1:
+                    subrow = [record.iloc[0]['fullName'], str(record.iloc[0]['liftKg'])+'kg', toDate(record.iloc[0]['date']).strftime("%d/%m/%Y")]
+                else:
+                    subrow = ['', '', '']
+                row = row + subrow
+            table.append(row)
+            print(table)
+        tables.append(pd.DataFrame(data=table, columns=render_columns))
+
+
+# dump tables to gsheet
+
+scope = ['https://spreadsheets.google.com/feeds',
+         'https://www.googleapis.com/auth/drive']
+credentials = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
+gc = gspread.authorize(credentials)
+
+spreadsheet_key = '1f5jhdb6rIkhKYS7i9vyzIJvNXYGgZdieRriTG08mmBI'
+
+#   student
+wks_name = 'Student (Automated)'
+
+#   men
+d2g.upload(tables[0], spreadsheet_key, wks_name, credentials=credentials, start_cell='A4', clean=False, col_names=False, row_names=False)  
+
+#   women
+d2g.upload(tables[1], spreadsheet_key, wks_name, credentials=credentials, start_cell='A16', clean=False, col_names=False, row_names=False)      
+
+#   alumni
+wks_name = 'Alumni (Automated)'
+
+#   men
+d2g.upload(tables[2], spreadsheet_key, wks_name, credentials=credentials, start_cell='A4', clean=False, col_names=False, row_names=False)  
+
+#   women
+d2g.upload(tables[3], spreadsheet_key, wks_name, credentials=credentials, start_cell='A16', clean=False, col_names=False, row_names=False)    
