@@ -24,6 +24,7 @@ lifters = pd.DataFrame(lifters_data, columns=lifters_columns)
 
 
 # get results from openpowerlifting and create dataframe
+# TODO: equipment
 
 results_columns = ['id', 'lifter_id', 'student', 'alumni', 'meetName', 'meetDate', 'bodyweight', 'squat', 'bench', 'deadlift', 'total']
 drop_columns = ['Name', 'Sex',	'Event', 'Equipment',	'Age',	'AgeClass',	'BirthYearClass',	'Division',	'WeightClassKg'	,'Squat1Kg',	'Squat2Kg',	'Squat3Kg',	'Squat4Kg',	'Bench1Kg',	'Bench2Kg',	'Bench3Kg',	'Bench4Kg',		'Deadlift1Kg',	'Deadlift2Kg',	'Deadlift3Kg',	'Deadlift4Kg',		'Place',	'Dots',	'Wilks',	'Glossbrenner',	'Goodlift',	'Tested',	'Country',	'State',	'Federation',	'ParentFederation',	'MeetCountry',	'MeetState',	'MeetTown']
@@ -124,13 +125,12 @@ for status in statuses:
                         record = [sex, status, weight_class[0], lift, row['fullName'], row[lift], row['meetDate']]
                         record_dump.append(record)
                         if row[lift] > float(oldKg):
-                            record_log.append(f"{row['meetDate']}: New {status} {sex}{weight_class[0]} record of {row[lift]}kg (+{row[lift]-oldKg}kg) by {row['fullName']} at {row['meetName']}")
+                            record_log.append(f"{row['meetDate']}: New {status} {sex}{weight_class[0]} {lift} record of {row[lift]}kg (+{row[lift]-oldKg}kg) by {row['fullName']} at {row['meetName']}")
 
 # dump record and logs to file
 records=pd.DataFrame(data=record_dump, columns=record_columns)
-print(records)
 records.to_csv('records.csv')
-with open('log.txt', 'w') as f:
+with open('record_log.txt', 'a') as f:
     for item in record_log:
         f.write("%s\n" % item)
 
@@ -158,7 +158,6 @@ for status in statuses:
                     subrow = ['', '', '']
                 row = row + subrow
             table.append(row)
-            print(table)
         tables.append(pd.DataFrame(data=table, columns=render_columns))
 
 
@@ -188,3 +187,5 @@ d2g.upload(tables[2], spreadsheet_key, wks_name, credentials=credentials, start_
 
 #   women
 d2g.upload(tables[3], spreadsheet_key, wks_name, credentials=credentials, start_cell='A16', clean=False, col_names=False, row_names=False)    
+
+print(f"{datetime.now()}: Succesfully updated with {len(record_log)} new records\n")
