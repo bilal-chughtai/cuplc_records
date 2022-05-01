@@ -49,11 +49,12 @@ def get_status(meetDate, matricDate, gradDate):
 
 for index, lifter in lifters.iterrows():
     df = pd.read_csv(f"https://www.openpowerlifting.org/u/{lifter['id']}/csv")
-    df.drop(columns=drop_columns, inplace=True)
+    df.drop(df[df.Equipment!='Raw'].index, inplace=True)
     df.rename(mapper=rename_map, axis=1, inplace=True)
     df['lifter_id'] = lifter['id']
     df['id']=df['lifter_id']+df['meetDate']
     df['status'] = df.apply(lambda x: get_status(x['meetDate'], lifter['matricDate'], lifter['gradDate']), axis=1)
+    df.drop(columns=drop_columns, inplace=True)
     frames.append(df)
 
 results = pd.concat(frames)
