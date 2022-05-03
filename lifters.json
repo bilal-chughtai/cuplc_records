@@ -16,8 +16,8 @@
     "id": "suzannegoulder",
     "fullName": "Suzanne Goulder",
     "sex": "F",
-    "matricDate": "2015-10-01",
-    "gradDate": "2019-10-01"
+    "matricDate": "2014-10-01",
+    "gradDate": "2018-10-01"
   },
   {
     "id": "eleanorbouttell",
@@ -58,15 +58,15 @@
     "id": "raghulparthipan",
     "fullName": "Raghul Parthipan",
     "sex": "M",
-    "matricDate": "2017-10-01",
+    "matricDate": "2015-10-01",
     "gradDate": "2023-10-01"
   },
   {
     "id": "salmankhan1",
     "fullName": "Salman Khan",
     "sex": "M",
-    "matricDate": "2014-10-01",
-    "gradDate": "2020-10-01"
+    "matricDate": "2013-10-01",
+    "gradDate": "2019-10-01"
   },
   {
     "id": "vikramthakur",
@@ -93,8 +93,8 @@
     "id": "yaronbernstein",
     "fullName": "Yaron Bernstein",
     "sex": "M",
-    "matricDate": "2016-10-01",
-    "gradDate": "2020-10-01"
+    "matricDate": "2015-10-01",
+    "gradDate": "2019-10-01"
   },
   {
     "id": "davidwhite1",
@@ -142,13 +142,20 @@
     "id": "victoriafali",
     "fullName": "Vikki Li",
     "sex": "F",
-    "matricDate": "2021-10-01",
-    "gradDate": "2024-10-01"
+    "matricDate": "2019-10-01",
+    "gradDate": "2022-10-01"
   },
   {
     "id": "vikkili",
     "fullName": "Vikki Li",
     "sex": "F",
+    "matricDate": "2019-10-01",
+    "gradDate": "2022-10-01"
+  },
+  {
+    "id": "sebastiancornwell",
+    "fullName": "Sebastian Cornwell",
+    "sex": "m",
     "matricDate": "2021-10-01",
     "gradDate": "2024-10-01"
   }

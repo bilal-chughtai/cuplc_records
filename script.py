@@ -189,4 +189,4 @@ d2g.upload(tables[2], spreadsheet_key, wks_name, credentials=credentials, start_
 #   women
 d2g.upload(tables[3], spreadsheet_key, wks_name, credentials=credentials, start_cell='A16', clean=False, col_names=False, row_names=False)    
 
-print(f"{datetime.now()}: Succesfully updated with {len(record_log)} new records\n")
+print(f"{datetime.now()}: Succesfully updated with {len(record_log)} new records")
