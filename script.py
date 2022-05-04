@@ -174,19 +174,26 @@ spreadsheet_key = '1f5jhdb6rIkhKYS7i9vyzIJvNXYGgZdieRriTG08mmBI'
 #   student
 wks_name = 'Student (Automated)'
 
-#   men
+#       men
 d2g.upload(tables[0], spreadsheet_key, wks_name, credentials=credentials, start_cell='A4', clean=False, col_names=False, row_names=False)  
 
-#   women
+#       women
 d2g.upload(tables[1], spreadsheet_key, wks_name, credentials=credentials, start_cell='A16', clean=False, col_names=False, row_names=False)      
 
 #   alumni
 wks_name = 'Alumni (Automated)'
 
-#   men
+#       men
 d2g.upload(tables[2], spreadsheet_key, wks_name, credentials=credentials, start_cell='A4', clean=False, col_names=False, row_names=False)  
 
-#   women
+#       women
 d2g.upload(tables[3], spreadsheet_key, wks_name, credentials=credentials, start_cell='A16', clean=False, col_names=False, row_names=False)    
 
 print(f"{datetime.now()}: Succesfully updated with {len(record_log)} new records")
+
+#   logs
+
+full_record_log = pd.read_csv('record_log.txt', header=None)
+full_record_log = full_record_log[::-1]
+wks_name = 'Log'
+d2g.upload(full_record_log, spreadsheet_key, wks_name, credentials=credentials, start_cell='A2', clean=False, col_names=False, row_names=False)    
