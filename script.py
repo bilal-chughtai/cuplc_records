@@ -126,7 +126,7 @@ for status in statuses:
                         record = [sex, status, weight_class[0], lift, row['fullName'], row[lift], row['meetDate']]
                         record_dump.append(record)
                         if row[lift] > float(oldKg):
-                            record_log.append(f"{row['meetDate']}: New {status} {sex}{weight_class[0]} {lift} record of {row[lift]}kg (+{row[lift]-oldKg}kg) by {row['fullName']} at {row['meetName']}")
+                            record_log.append(f"{toDate(row['meetDate']).strftime('%d/%m/%Y')}: New {status} {sex}{weight_class[0]} {lift} record of {row[lift]}kg (+{row[lift]-oldKg}kg) by {row['fullName']} at {row['meetName']}")
 
 # dump record and logs to file
 records=pd.DataFrame(data=record_dump, columns=record_columns)
