@@ -3,28 +3,27 @@ import json
 from datetime import datetime
 import gspread
 import df2gspread.df2gspread as d2g
+import df2gspread.gspread2df as g2d
 from oauth2client.service_account import ServiceAccountCredentials
 
 
 def toDate(date_string):
     return datetime.strptime(date_string,'%Y-%m-%d')
 
+# google drive credentials
 
+scope = ['https://spreadsheets.google.com/feeds',
+         'https://www.googleapis.com/auth/drive']
+credentials = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
+gc = gspread.authorize(credentials)
 
 # create dataframe holding information about lifters
-
-lifters_columns = ['id', 'fullName', 'sex', 'matricDate', 'gradDate']
-lifters_data = []
-lifter_file = open("lifters.json")
-lifters_dump = json.load(lifter_file)
-for lifter in lifters_dump:
-    row = [lifter['id'], lifter['fullName'], lifter['sex'], toDate(lifter['matricDate']), toDate(lifter['gradDate'])]
-    lifters_data.append(row)
-lifters = pd.DataFrame(lifters_data, columns=lifters_columns)
-
+lifters_spreadsheet_key = '1IWwrTthmEn6xwDTp6J08EK5OfszmCeAQCvQ1H5x3EJ4'
+lifters = g2d.download(lifters_spreadsheet_key, 'lifters', col_names=True, credentials=credentials)
+lifters['matricDate']=lifters['matricDate'].apply(toDate)
+lifters['gradDate']=lifters['gradDate'].apply(toDate)
 
 # get results from openpowerlifting and create dataframe
-# TODO: equipment
 
 results_columns = ['id', 'lifter_id', 'student', 'alumni', 'meetName', 'meetDate', 'bodyweight', 'squat', 'bench', 'deadlift', 'total']
 drop_columns = ['Name', 'Sex',	'Event', 'Equipment',	'Age',	'AgeClass',	'BirthYearClass',	'Division',	'WeightClassKg'	,'Squat1Kg',	'Squat2Kg',	'Squat3Kg',	'Squat4Kg',	'Bench1Kg',	'Bench2Kg',	'Bench3Kg',	'Bench4Kg',		'Deadlift1Kg',	'Deadlift2Kg',	'Deadlift3Kg',	'Deadlift4Kg',		'Place',	'Dots',	'Wilks',	'Glossbrenner',	'Goodlift',	'Tested',	'Country',	'State',	'Federation',	'ParentFederation',	'MeetCountry',	'MeetState',	'MeetTown']
@@ -164,10 +163,6 @@ for status in statuses:
 
 # dump tables to gsheet
 
-scope = ['https://spreadsheets.google.com/feeds',
-         'https://www.googleapis.com/auth/drive']
-credentials = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
-gc = gspread.authorize(credentials)
 
 spreadsheet_key = '1f5jhdb6rIkhKYS7i9vyzIJvNXYGgZdieRriTG08mmBI'
 
