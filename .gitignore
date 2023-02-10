@@ -135,9 +135,6 @@ dmypy.json
 service_account.json
 
 # data
-record_log_old.txt
 record_log.txt
 records.csv
-records_old.csv
 log.txt
-log_old.txt

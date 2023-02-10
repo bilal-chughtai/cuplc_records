@@ -1,4 +1,4 @@
 #!/bin/bash
 cd /home/bc464/cuplc/records
 git pull
-python3 script.py >> log.txt
+poetry run python script.py >> log.txt
