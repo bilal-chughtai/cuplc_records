@@ -148,11 +148,6 @@ for status in statuses:
                     (data['bodyweight'] <= weight_class['upper'])
                 ]
 
-                # if male bench 93kg student print valid results
-                if sex == 'M' and weight_class['name'] == '93kg' and status == 'student':
-                    print(valid_results)
-
-
                 for lift in lifts:
                     
                     # get old record    
