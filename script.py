@@ -17,6 +17,46 @@ def get_status(meetDate, matricDate, gradDate):
         return 'alumni'
     return 'none'
 
+def validate_lifter(lifter):
+    if lifter['id'] == '':
+        return 'id is empty'
+    if lifter['fullName'] == '':
+        return 'fullName is empty'
+    if lifter['sex'] not in ['M', 'F']:
+        return 'invalid sex'
+    # check form of dates
+    try:
+        toDate(lifter['matricDate'])
+    except:
+        return 'invalid matricDate'
+    try:
+        toDate(lifter['gradDate'])
+    except:
+        return 'invalid gradDate'
+    # check that matricDate is before gradDate
+    if toDate(lifter['matricDate']) > toDate(lifter['gradDate']):
+        return 'matricDate is after gradDate'
+    # check that if skip_opl is false or blank, then the openpowerlifting link exists
+    if not lifter['skip_opl'] or lifter['skip_opl'] == '':
+        try:
+            df = pd.read_csv(f"https://www.openpowerlifting.org/u/{lifter['id']}/csv")
+        except:
+            return 'openpowerlifting id does not exist'
+    return True
+
+def validate_manual_result(row, lifters):
+    if row['lifter_id'] == '':
+        return 'lifter_id is empty'
+    if row['lifter_id'] not in lifters['id'].values:
+        return 'lifter_id not in lifters'
+    if row['meetName'] == '':
+        return 'meetName is empty'
+    # check form of dates
+    try:
+        toDate(row['meetDate'])
+    except:
+        return 'invalid meetDate'
+    return True
 
 # load config json
 with open('config.json') as json_file:
@@ -30,11 +70,21 @@ gc = gspread.authorize(credentials)
 
 # create dataframe holding information about lifters
 lifters = g2d.download(cfg['lifters_spreadsheet_key'], cfg['lifters_sheet_name'], col_names=True, credentials=credentials)
-lifters['matricDate']=lifters['matricDate'].apply(toDate)
-lifters['gradDate']=lifters['gradDate'].apply(toDate)
+
 # fill in missing values
 lifters['skip_opl'] = lifters['skip_opl'].fillna(False)
 lifters['skip_opl'] = lifters['skip_opl'].astype(bool)
+
+# validate lifters
+for index, lifter in lifters.iterrows():
+    validate = validate_lifter(lifter)
+    if validate != True:
+        print(f"Invalid lifter: {lifter['id']}, error: {validate}")
+        lifters.drop(index, inplace=True)
+
+# change the dates
+lifters['matricDate']=lifters['matricDate'].apply(toDate)
+lifters['gradDate']=lifters['gradDate'].apply(toDate)
 
 # get results from openpowerlifting.org
 results_columns = ['id', 'lifter_id', 'student', 'alumni', 'meetName', 'meetDate', 'bodyweight', 'squat', 'bench', 'deadlift', 'total']
@@ -76,13 +126,28 @@ opl_results = pd.concat(frames)
 
 # get results from manual entries
 manual_results = g2d.download(cfg['records_spreadsheet_key'], cfg['manual_sheet_name'], col_names=True, credentials=credentials)
-manual_results['meetDate'] = manual_results['meetDate'].apply(toDate)
-# cast manual results 
+
+# fill in missing values
+manual_results['squat'] = manual_results['squat'].fillna(0)
+manual_results['bench'] = manual_results['bench'].fillna(0)
+manual_results['deadlift'] = manual_results['deadlift'].fillna(0)
+manual_results['total'] = manual_results['total'].fillna(0)
+manual_results['bodyweight'] = manual_results['bodyweight'].fillna(0)
 manual_results['squat'] = manual_results['squat'].astype(float)
 manual_results['bench'] = manual_results['bench'].astype(float)
 manual_results['deadlift'] = manual_results['deadlift'].astype(float)
 manual_results['total'] = manual_results['total'].astype(float)
 manual_results['bodyweight'] = manual_results['bodyweight'].astype(float)
+
+# validate
+for index, row in manual_results.iterrows():
+    x = validate_manual_result(row, lifters)
+    if x != True:
+        print(f"Invalid manual result: {row['id']}, error: {x}")
+        manual_results.drop(index, inplace=True)
+
+# change dates
+manual_results['meetDate'] = manual_results['meetDate'].apply(toDate)
 
 # for each row in manual results, use the lifter id to get the grad and matric dates
 manual_results['matricDate'] = manual_results.apply(lambda x: lifters[lifters['id']==x['lifter_id']]['matricDate'].values[0], axis=1)
@@ -91,8 +156,6 @@ manual_results['gradDate'] = manual_results.apply(lambda x: lifters[lifters['id'
 # add status
 manual_results['status'] = manual_results.apply(lambda x: get_status(x['meetDate'], x['matricDate'], x['gradDate']), axis=1)
 
-
-
 # combine results
 results = pd.concat([opl_results, manual_results])
 
@@ -100,8 +163,8 @@ results = pd.concat([opl_results, manual_results])
 data = results.merge(lifters, how="left", left_on="lifter_id", right_on="id")
 
 # set up weight classes and categories
-female_classes = [47, 52, 57, 63, 69, 76, 84]
-male_classes = [59, 66, 74, 83, 93, 105, 120]
+female_classes = cfg['female_classes']
+male_classes = cfg['male_classes']
 lifts = ['squat', 'bench', 'deadlift', 'total']
 
 def class_boundaries_to_classes(boundaries):
@@ -229,9 +292,20 @@ d2g.upload(tables[3], records_spreadsheet_key, wks_name, credentials=credentials
 
 print(f"{datetime.now()}: Succesfully updated with {len(record_log)} new records")
 
-#   logs
+# logs
 
 full_record_log = pd.read_csv('record_log.txt', header=None)
+# split by the colon
+full_record_log = full_record_log[0].str.split(':', n=1, expand=True)
+# convert dates to datetime
+full_record_log[0] = pd.to_datetime(full_record_log[0], format='%d/%m/%Y')
+# sort by date first, then by name
+full_record_log = full_record_log.sort_values(by=[0,1])
+# convert back to one column with a :
+full_record_log = full_record_log[0].astype(str) + ': ' + full_record_log[1]
+# reverse order
 full_record_log = full_record_log[::-1]
+# convert to pandas dataframe
+full_record_log = pd.DataFrame(full_record_log)
 wks_name = cfg['log_sheet_name']
 d2g.upload(full_record_log, records_spreadsheet_key, wks_name, credentials=credentials, start_cell='A2', clean=False, col_names=False, row_names=False)    
