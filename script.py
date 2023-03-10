@@ -39,7 +39,7 @@ def validate_lifter(lifter):
     # check that if skip_opl is false or blank, then the openpowerlifting link exists
     if not lifter['skip_opl'] or lifter['skip_opl'] == '':
         try:
-            df = pd.read_csv(f"https://www.openpowerlifting.org/u/{lifter['id']}/csv")
+            df = pd.read_csv(f"https://www.openpowerlifting.org/api/liftercsv/{lifter['id']}")
         except:
             return 'openpowerlifting id does not exist'
     return True
@@ -103,7 +103,7 @@ frames = []
 
 for index, lifter in lifters.iterrows():
     if not lifter['skip_opl']:
-        df = pd.read_csv(f"https://www.openpowerlifting.org/u/{lifter['id']}/csv")
+        df = pd.read_csv(f"https://www.openpowerlifting.org/api/liftercsv/{lifter['id']}")
 
         # drop equipped comps
         df.drop(df[df.Equipment!='Raw'].index, inplace=True)
