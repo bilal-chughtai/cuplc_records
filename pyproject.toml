@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Compute and push CUPLC student and alumni records to the website from OpenPowerlifting data."
 authors = ["bilal-chughtai <brchughtaii@gmail.com>"]
 readme = "README.md"
-packages = [{include = "cuplc_records"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
