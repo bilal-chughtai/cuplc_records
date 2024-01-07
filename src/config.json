@@ -1,5 +1,6 @@
 {
     "service_account": "service_account.json",
+    "mail_credentials": "mail_credentials.json",
     "lifters_spreadsheet_key": "1IWwrTthmEn6xwDTp6J08EK5OfszmCeAQCvQ1H5x3EJ4",
     "lifters_sheet_name": "lifters",
     "female_weightclasses": [47, 52, 57, 63, 69, 76, 84],
