@@ -8,6 +8,8 @@ import df2gspread.gspread2df as g2d
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import pandas as pd
+import os
+import pickle
 
 OPL_RENAME_MAP = {
     'BodyweightKg': 'bodyweight',
@@ -257,6 +259,7 @@ class Record:
     fullName: str
     liftKg: float
     date: datetime
+    meetName: str
 
 
 def compute_records(lifters: dict[str, Lifter], results: list[Result], weightclasses: list[WeightClass]) -> list[Record]:
@@ -282,12 +285,40 @@ def compute_records(lifters: dict[str, Lifter], results: list[Result], weightcla
                     lift = lift,
                     fullName = lifter.fullName,
                     liftKg = getattr(record_result, lift),
-                    date = record_result.meetDate
+                    date = record_result.meetDate,
+                    meetName = record_result.meetName
                 )
                 records.append(record)
     return records
-                        
-def render_records(records: list[Record], weightclasses: list[WeightClass]):
+                      
+def save_to_file(records: list[Record]):
+    # pickle records
+    with open('data/records.pickle', 'wb') as f:
+        pickle.dump(records, f)
+
+def load_records_from_file():
+    if os.path.exists('data/records.pickle'):
+        with open('data/records.pickle', 'rb') as f:
+            records = pickle.load(f)
+        return records
+    else:
+        return None
+
+def diff_records(new_records: list[Record], old_records: list[Record]):
+    log = []
+    for new_record in new_records:
+        # find corresponding old record
+        for old_record in old_records:
+            if old_record.sex == new_record.sex and old_record.status == new_record.status and old_record.weightclass == new_record.weightclass and old_record.lift == new_record.lift:
+                if old_record.liftKg != new_record.liftKg:
+                    # put it in this form: 2023-12-10:  New student F76kg total record of 395.0kg (+5.0kg) by Emmanuela Onah at ACE Performance Christmas Championships
+                    log.append(f"New {new_record.status} {new_record.weightclass.sex}{new_record.weightclass.name} {new_record.lift} record of {new_record.liftKg}kg (+{new_record.liftKg - old_record.liftKg}kg) by {new_record.fullName} at {new_record.meetName}")
+    return log
+                    
+
+
+def render_records(records: list[Record], weightclasses: list[WeightClass]) -> list[pd.DataFrame]:
+    """ Returns a list of 4 dataframes, containining records in the order student male, student female, alumni male, alumni female"""
     tables = []
     render_columns = ['class', 's_lifter', 's_record', 's_year', 'b_lifter', 'b_record', 'b_year', 'd_lifter', 'd_record', 'd_year', 't_lifter', 't_record', 't_year']
     for status in STATUSES:
@@ -298,7 +329,6 @@ def render_records(records: list[Record], weightclasses: list[WeightClass]):
                     row = [weightclass.name]
                     for lift in LIFTS:
                         valid_records = [record for record in records if record.sex == sex and record.status == status and record.weightclass == weightclass and record.lift == lift] 
-                        print(valid_records)
                         if len(valid_records) == 1:
                             current = valid_records[0]
                             subrow = [current.fullName, str(current.liftKg)+'kg', current.date.strftime("%d/%m/%Y")]
@@ -308,7 +338,28 @@ def render_records(records: list[Record], weightclasses: list[WeightClass]):
                     table.append(row)
             tables.append(pd.DataFrame(data=table, columns=render_columns))
     return tables
-          
+
+def export_log_and_records(tables: list[pd.DataFrame], log: list[str], cfg: Config, credentials: ServiceAccountCredentials):
+    
+    # student men
+    d2g.upload(tables[0], cfg.records_spreadsheet_key, cfg.student_sheet_name, credentials=credentials, start_cell='A4', clean=False, col_names=False, row_names=False)  
+
+    # student women
+    d2g.upload(tables[1], cfg.records_spreadsheet_key, cfg.student_sheet_name, credentials=credentials, start_cell='A16', clean=False, col_names=False, row_names=False)      
+
+    # alumni men
+    d2g.upload(tables[2], cfg.records_spreadsheet_key, cfg.alumni_sheet_name, credentials=credentials, start_cell='A4', clean=False, col_names=False, row_names=False)  
+
+    # alumni women
+    d2g.upload(tables[3], cfg.records_spreadsheet_key, cfg.alumni_sheet_name, credentials=credentials, start_cell='A16', clean=False, col_names=False, row_names=False)    
+
+    # download record log from A2:A1000
+    old_record_log = g2d.download(cfg.records_spreadsheet_key, cfg.log_sheet_name, col_names=False, credentials=credentials, start_cell='A2')
+    # append new log to top of old log
+    record_log = pd.DataFrame(log)
+    record_log = record_log.append(old_record_log)
+    d2g.upload(record_log, cfg.records_spreadsheet_key, cfg.log_sheet_name, credentials=credentials, start_cell='A2', clean=False, col_names=False, row_names=False)    
+
 def main():
     argparser = ArgumentParser()
     argparser.add_argument("--config", type=str, default="src/config.json")
@@ -324,12 +375,16 @@ def main():
     all_results = opl_results + manual_results
     
     new_records = compute_records(lifters, all_results, weightclasses)
+    old_records = load_records_from_file()
+    
+    if old_records is not None:
+        log = diff_records(new_records, old_records)
+    else:
+        log = []
     tables = render_records(new_records, weightclasses)
     
-    # dump tables to csv
-    for i, table in enumerate(tables):
-        table.to_csv(f"data/records_{i}.csv")
-    
+    save_to_file(new_records)
+    export_log_and_records(tables, log, cfg, credentials)
     
     
     
