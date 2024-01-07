@@ -397,26 +397,30 @@ def main():
     )
     logger.addHandler(mail_handler)
     
-    
-    credentials = get_google_service_account_credentials(cfg)
-    weightclasses = build_weight_classes(cfg)
-    
-    lifters = get_lifters(cfg, credentials)
-    opl_results = load_opl_results(lifters, weightclasses)
-    manual_results = load_manual_results(cfg, credentials, lifters, weightclasses)
-    all_results = opl_results + manual_results
-    
-    new_records = compute_records(lifters, all_results, weightclasses)
-    old_records = load_records_from_file()
-    
-    if old_records is not None:
-        log = diff_records(new_records, old_records)
-    else:
-        log = []
-    tables = render_records(new_records, weightclasses)
-    
-    save_to_file(new_records)
-    export_log_and_records(tables, log, cfg, credentials)
+    # catch any other exception
+    try:
+        credentials = get_google_service_account_credentials(cfg)
+        weightclasses = build_weight_classes(cfg)
+        
+        lifters = get_lifters(cfg, credentials)
+        opl_results = load_opl_results(lifters, weightclasses)
+        manual_results = load_manual_results(cfg, credentials, lifters, weightclasses)
+        all_results = opl_results + manual_results
+        
+        new_records = compute_records(lifters, all_results, weightclasses)
+        old_records = load_records_from_file()
+        
+        if old_records is not None:
+            log = diff_records(new_records, old_records)
+        else:
+            log = []
+        tables = render_records(new_records, weightclasses)
+        
+        save_to_file(new_records)
+        export_log_and_records(tables, log, cfg, credentials)
+    except Exception as e:
+        logging.error("Fatal unhandled exception occured :(", exc_info=True)  # Logs the traceback
+        sys.exit(1)
     
 if __name__ == "__main__":
     main()
