@@ -6,7 +6,7 @@ import gspread
 import df2gspread.df2gspread as d2g
 import df2gspread.gspread2df as g2d
 from oauth2client.service_account import ServiceAccountCredentials
-import datetime
+from datetime import datetime
 import pandas as pd
 
 OPL_RENAME_MAP = {
@@ -23,31 +23,24 @@ OPL_RESULTS_COLUMNS = ['id', 'lifter_id', 'student', 'alumni', 'meetName', 'meet
 
 SEXES = ['M', 'F']
 STATUSES = ['student', 'alumni']
+LIFTS = ['squat', 'bench', 'deadlift', 'total']
+
+
+""" Config and Credentials"""
 
 @dataclass
 class Config:
     service_account: str
     lifters_spreadsheet_key: str
     lifters_sheet_name: str
-    female_classes: list[int]
-    male_classes: list[int]
+    female_weightclasses: list[int]
+    male_weightclasses: list[int]
     records_spreadsheet_key: str
     manual_sheet_name: str
     student_sheet_name: str
     alumni_sheet_name: str
     log_sheet_name: str
 
-def load_config(config_path: str) -> Config:
-    """Load config from a json file path"""
-    logger = logging.getLogger(__name__)
-    logging.info("Loading config from %s", config_path)
-    with open(config_path, "r") as f:
-        config = json.load(f)
-    config = Config(**config)
-    logging.info("Config loaded")
-    return config
-
-    
 def get_google_service_account_credentials(cfg: Config) -> ServiceAccountCredentials:
     """Get google service account credentials from a json file path"""
     logger = logging.getLogger(__name__)
@@ -59,9 +52,19 @@ def get_google_service_account_credentials(cfg: Config) -> ServiceAccountCredent
     logging.info("Google service account credentials loaded")
     return credentials
 
-def toDate(date_string: str):
-    """Converts a date string in the format YYYY-MM-DD to a datetime object"""
-    return datetime.strptime(date_string,'%Y-%m-%d')
+
+def load_config(config_path: str) -> Config:
+    """Load config from a json file path"""
+    logger = logging.getLogger(__name__)
+    logging.info("Loading config from %s", config_path)
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    config = Config(**config)
+    logging.info("Config loaded")
+    return config
+
+
+""" Weight Classes"""
 
 @dataclass
 class WeightClass:
@@ -71,170 +74,261 @@ class WeightClass:
     upper: float
 
 def build_weight_classes(cfg:Config) -> list[WeightClass]:
-    male_boundaries = cfg.male_classes
-    female_boundaries = cfg.female_classes 
+    male_boundaries = cfg.male_weightclasses
+    female_boundaries = cfg.female_weightclasses
     classes = []
-    for sex, boundaries in zip(["M, F"], [male_boundaries, female_boundaries]):
+    for sex, boundaries in zip(["M", "F"], [male_boundaries, female_boundaries]):
         classes.append(
-            WeightClass(str(boundaries[0]+'kg'), sex, 0, boundaries[0]))
+            WeightClass(str(boundaries[0])+'kg', sex, 0, boundaries[0]))
         for i in range(1,len(boundaries)):
             classes.append(
-                WeightClass(str(boundaries[i]+'kg'), sex, boundaries[i-1], boundaries[i])
+                WeightClass(str(boundaries[i])+'kg', sex, boundaries[i-1], boundaries[i])
             )
         classes.append(
-            WeightClass(boundaries[-1]+'kg+', sex, boundaries[-1], 999)
+            WeightClass(str(boundaries[-1])+'kg+', sex, boundaries[-1], 999)
         )
     return classes
 
-class Lifters:
-    def __init__(self, cfg: Config, credentials: ServiceAccountCredentials):
-        self.cfg = cfg
-        self.credentials = credentials
-        self.logger = logging.getLogger(__name__)
-        self.load_lifters_from_drive()
-        self.clean_data()
-        
-    def load_lifters_from_drive(self):
-        self.data = g2d.download(self.cfg.lifters_spreadsheet_key, self.cfg.lifters_sheet_name, col_names=True, credentials=self.credentials)
+""" Lifters """
 
-    def clean_data(self):
-        self.data['matricDate']=self.data['matricDate'].apply(toDate)
-        self.data['gradDate']=self.data['gradDate'].apply(toDate)
-        self.data['skip_opl'] = self.data['skip_opl'].fillna(False)
-        self.data['skip_opl'] = self.data['skip_opl'].astype(bool)
-        
-class Results:
-    def __init__(self, cfg: Config, credentials:ServiceAccountCredentials, lifters: Lifters, weight_classes: list[WeightClass]):
-        self.cfg = cfg
-        self.lifters = lifters
-        self.credentials = credentials
-        self.logger = logging.getLogger(__name__)
-        self.weight_classes = weight_classes
-        self.load_results_from_opl()
-        self.load_manual_results()
-        self.data = pd.concat([self.opl_results, self.manual_results])
+@dataclass 
+class Lifter:
+    id: str
+    fullName: str
+    sex: str
+    matricDate: datetime
+    gradDate: datetime
+    skip_opl: bool
+    
 
-    def get_status(self, meetDate, matricDate, gradDate):
-        if matricDate <= meetDate <= gradDate:
-            return 'student'
-        elif gradDate < meetDate:
-            return 'alumni'
-        return 'none'
+def toDate(date_string: str):
+    """Converts a date string in the format YYYY-MM-DD to a datetime object"""
+    return datetime.strptime(date_string,'%Y-%m-%d')
+
+
+def get_lifters(cfg: Config, credentials: ServiceAccountCredentials) -> dict[str, Lifter]:
+    logger = logging.getLogger(__name__)
+
+    try:
+        data = g2d.download(cfg.lifters_spreadsheet_key, cfg.lifters_sheet_name, col_names=True, credentials=credentials)
+    except Exception as e:
+        logger.error(f"Error loading data from Google Drive: {e}")
+        raise e
+
+    lifters = {}
+    for index, row in data.iterrows():
+        try:
+            row['matricDate'] = toDate(row['matricDate'])
+            row['gradDate'] = toDate(row['gradDate'])
+            row['skip_opl'] = row['skip_opl'] if pd.notna(row['skip_opl']) else False
+            row['skip_opl'] = bool(row['skip_opl'])
+            lifter = Lifter(**row)
+            lifters[lifter.id] = lifter
+        except Exception as e:
+            # Log the error and skip the row
+            logger.error(f"Error processing lifter {row['fullName']}: {e}")
+            continue
+
+    return lifters
+
+""" Results """
+
+@dataclass
+class Result:
+    id: str
+    lifter_id: str
+    status: str
+    meetName: str
+    meetDate: datetime
+    bodyweight: float
+    squat: float
+    bench: float
+    deadlift: float
+    total: float
+    weightclass: WeightClass
     
-    def get_class(self, bodyweight: float, sex: str):
-        for weight_class in self.weight_classes:
-            if sex == weight_class.sex and weight_class.lower < bodyweight <= weight_class.upper:
-                return weight_class.name
     
-    def load_results_from_opl(self):
-        frames = []
-        for index, lifter in self.lifters.data.iterrows():
-            if lifter['skip_opl']:
+def get_status(meetDate, matricDate, gradDate):
+    if matricDate <= meetDate <= gradDate:
+        return 'student'
+    elif gradDate < meetDate:
+        return 'alumni'
+    return 'none'
+
+def get_weightclass(bodyweight: float, sex: str, weightclasses: list[WeightClass]):
+    for weightclass in weightclasses:
+        if sex == weightclass.sex and weightclass.lower < float(bodyweight) and float(bodyweight) <= weightclass.upper:
+            return weightclass
+            
+
+def load_opl_results(lifters: dict[str, Lifter], weight_classes: list[WeightClass]) -> list[Result]:
+    logger = logging.getLogger(__name__)
+    results = []
+
+    for lifter in lifters.values():
+        if lifter.skip_opl:
+            continue
+        
+        try:
+            df = pd.read_csv(f"https://www.openpowerlifting.org/api/liftercsv/{lifter.id}")
+        except:
+            logger.error(f"Error loading results from Open Powerlifting for lifter {lifter.fullName} via url https://www.openpowerlifting.org/api/liftercsv/{lifter.id}")
+            continue
+        
+        # rename columns to match Result dataclass
+        df.rename(mapper=OPL_RENAME_MAP, axis=1, inplace=True)
+        for i, row in df.iterrows():
+            
+            if row['Equipment'] != 'Raw':
+                # Skip equipped results
+                continue
+
+            try:
+                meetDate = toDate(row['meetDate'])
+                squat = float(row['squat']) if pd.notna(row['squat']) else 0
+                bench = float(row['bench']) if pd.notna(row['bench']) else 0
+                deadlift = float(row['deadlift']) if pd.notna(row['deadlift']) else 0
+                total = float(row['total']) if pd.notna(row['total']) else 0
+                result = Result(
+                    id = lifter.id + row['meetDate'],
+                    lifter_id = lifter.id,
+                    status = get_status(meetDate, lifter.matricDate, lifter.gradDate),
+                    meetName = row['meetName'],
+                    meetDate = meetDate,
+                    bodyweight = float(row['bodyweight']),
+                    squat = squat, 
+                    bench = bench,
+                    deadlift = deadlift,
+                    total = total,
+                    weightclass=get_weightclass(row["bodyweight"], lifter.sex, weight_classes)
+                )
+                results.append(result)
+            except Exception as e:
+                # Log the error and skip the row
+                logger.error(f"Error processing result {row['id']}: {e}")
                 continue
             
-            df = pd.read_csv(f"https://www.openpowerlifting.org/u/{lifter['id']}/csv")
+    return results
 
-            # drop equipped comps
-            df.drop(df[df.Equipment!='Raw'].index, inplace=True)
+        
+def load_manual_results(cfg: Config, credentials: ServiceAccountCredentials, lifters: dict[str, Lifter], weightclasses: list[WeightClass]):
+    logger = logging.getLogger(__name__)
+    
+    df = g2d.download(cfg.records_spreadsheet_key, cfg.manual_sheet_name, col_names=True, credentials=credentials)    
+    results = []
+    
+    for i, row in df.iterrows():
 
-            # rename columns
-            df.rename(mapper=OPL_RENAME_MAP, axis=1, inplace=True)
+        try:
+            meetDate = toDate(row['meetDate'])
+            lifter = lifters.get(row['lifter_id'], None)
+            if lifter is None:
+                logger.error(f"Could not find lifter for manual resold {row['id']} with id {row['lifter_id']}")
+                continue
             
-            # drop all columns not in OPL_NAME_MAP.keys()
-            df.drop(columns=[col for col in df.columns if col not in OPL_RESULTS_COLUMNS], inplace=True)
+            result = Result(
+                id = row['id'],
+                lifter_id = row['lifter_id'],
+                status = get_status(meetDate, lifter.matricDate, lifter.gradDate),
+                meetName = row['meetName'],
+                meetDate = meetDate,
+                bodyweight = float(row['bodyweight']),
+                squat = float(row['squat']),
+                bench = float(row['bench']),
+                deadlift = float(row['deadlift']),
+                total = float(row['total']),
+                weightclass = get_weightclass(float(row["bodyweight"]), lifter.sex, weightclasses)
+            )
+            results.append(result)
+        except Exception as e:
+            # Log the error and skip the row
+            logger.error(f"Error processing result {row['id']}: {e}")
+            continue
+    return results
 
-            # add ids
-            df['lifter_id'] = lifter['id']
-            df['id']=df['lifter_id']+df['meetDate']
-            
-            # convert dates and get status and weight class
-            df['meetDate'] = df['meetDate'].apply(toDate)
-            df['status'] = df.apply(lambda x: self.get_status(x['meetDate'], lifter['matricDate'], lifter['gradDate']), axis=1)
-            df['class'] = df.apply(lambda x: self.get_class(x['bodyweight'], lifter['sex']), axis=1)
-            
-            frames.append(df)
+""" Records """
 
-        self.opl_results = pd.concat(frames)
-        
-    def load_manual_results(self):
-        # get results from manual entries
-        manual_results = g2d.download(self.cfg.records_spreadsheet_key, self.cfg.manual_sheet_name, col_names=True, credentials=self.credentials)
-        manual_results['meetDate'] = manual_results['meetDate'].apply(toDate)
+@dataclass
+class Record:
+    sex: str
+    status: str
+    weightclass: WeightClass
+    lift: str
+    fullName: str
+    liftKg: float
+    date: datetime
 
-        # cast manual results 
-        manual_results['squat'] = manual_results['squat'].astype(float)
-        manual_results['bench'] = manual_results['bench'].astype(float)
-        manual_results['deadlift'] = manual_results['deadlift'].astype(float)
-        manual_results['total'] = manual_results['total'].astype(float)
-        manual_results['bodyweight'] = manual_results['bodyweight'].astype(float)
 
-        # for each row in manual results, use the lifter id to get the grad and matric dates
-        manual_results['matricDate'] = manual_results.apply(lambda x: self.lifters.data[self.lifters.data['id']==x['lifter_id']]['matricDate'].values[0], axis=1)
-        manual_results['gradDate'] = manual_results.apply(lambda x: self.lifters.data[self.lifters.data['id']==x['lifter_id']]['gradDate'].values[0], axis=1)
-
-        # add status
-        manual_results['status'] = manual_results.apply(lambda x: self.get_status(x['meetDate'], x['matricDate'], x['gradDate']), axis=1)
-        manual_results['class'] = manual_results.apply(lambda x: self.get_class(x['bodyweight'], self.lifters.data[self.lifters.data['id']==x['lifter_id']]['sex'].values[0], axis=1))
-    
-class Records:
-    def __init__(self, cfg: Config, credentials:ServiceAccountCredentials, lifters: Lifters, results: Results, weight_classes: list[WeightClass]):
-        self.cfg = cfg
-        self.lifters = lifters
-        self.results = results
-        self.credentials = credentials
-        self.weight_classes = weight_classes
-
-        
-        self.data = self.results.data.merge(results.lifters.data, how="left", left_on="lifter_id", right_on="id")
-        self.record_columns = ['sex', 'status', 'weightclass', 'lift', 'fullName', 'liftKg', 'date']
-        self.statuses = ["student", "alumni"]
-        self.lifts = ["squat", "bench", "deadlift", "total"]
-        self.instantiate_records_df()
-        self.compute_records()
-        self.load_old_records()
-        self.compute_diff()
-        
-    def instantiate_records_df(self):
-        self.new_records = pd.DataFrame(columns=self.record_columns)
-        
-    def compute_records(self):
-        for status in self.statuses:
-            for weight_class in self.weight_classes:
-                sex = weight_class.sex
-                valid_results = self.data[(self.data['status']==status) & (self.data['class']==weight_class.name) & (self.data['sex'] == sex)]
-                for lift in self.lifts:
-                    maxes = valid_results[valid_results[lift]==valid_results[lift].max()]
-                    earliest = maxes[maxes['meetDate']==maxes['meetDate'].min()]
-                    for index,row in earliest.iterrows():
-                        record = [sex, status, weight_class['name'], lift, row['fullName'], row[lift], row['meetDate']]
-                        self.new_records.loc[len(self.new_records)] = record
-    
-    def load_old_records(self):
-        self.old_records = pd.read_csv("data/records.csv")
-    
-    def compute_record_diff
-                
-        
-        
-
-           
-  
-    
-      
+def compute_records(lifters: dict[str, Lifter], results: list[Result], weightclasses: list[WeightClass]) -> list[Record]:
+    records = []
+    for status in STATUSES:
+        for weightclass in weightclasses:
+            sex = weightclass.sex
+            valid_results = [result for result in results if result.status == status and result.weightclass == weightclass]
+            for lift in LIFTS:
+                valid_kgs = [getattr(result, lift) for result in valid_results]
+                if len(valid_kgs) == 0:
+                    continue
+                record_kg = max(getattr(result, lift) for result in valid_results)
+                max_lift_results = [result for result in valid_results if getattr(result, lift) == record_kg]
+                min_date = min(result.meetDate for result in max_lift_results)
+                earliest_max_lift_results = [result for result in max_lift_results if result.meetDate == min_date]
+                record_result = earliest_max_lift_results[0]
+                lifter = lifters[record_result.lifter_id]
+                record = Record(
+                    sex = lifter.sex,
+                    status = status,
+                    weightclass = weightclass,
+                    lift = lift,
+                    fullName = lifter.fullName,
+                    liftKg = getattr(record_result, lift),
+                    date = record_result.meetDate
+                )
+                records.append(record)
+    return records
+                        
+def render_records(records: list[Record], weightclasses: list[WeightClass]):
+    tables = []
+    render_columns = ['class', 's_lifter', 's_record', 's_year', 'b_lifter', 'b_record', 'b_year', 'd_lifter', 'd_record', 'd_year', 't_lifter', 't_record', 't_year']
+    for status in STATUSES:
+        for sex in SEXES:
+            table = []
+            for weightclass in weightclasses:
+                if weightclass.sex == sex:
+                    row = [weightclass.name]
+                    for lift in LIFTS:
+                        valid_records = [record for record in records if record.sex == sex and record.status == status and record.weightclass == weightclass and record.lift == lift] 
+                        print(valid_records)
+                        if len(valid_records) == 1:
+                            current = valid_records[0]
+                            subrow = [current.fullName, str(current.liftKg)+'kg', current.date.strftime("%d/%m/%Y")]
+                        else:
+                            subrow = ['', '', '']
+                        row = row + subrow
+                    table.append(row)
+            tables.append(pd.DataFrame(data=table, columns=render_columns))
+    return tables
+          
 def main():
     argparser = ArgumentParser()
-    argparser.add_argument("--config", type=str, default="config.json")
+    argparser.add_argument("--config", type=str, default="src/config.json")
     args = argparser.parse_args()
     
     cfg = load_config(args.config)
-    
     credentials = get_google_service_account_credentials(cfg)
+    weightclasses = build_weight_classes(cfg)
     
+    lifters = get_lifters(cfg, credentials)
+    opl_results = load_opl_results(lifters, weightclasses)
+    manual_results = load_manual_results(cfg, credentials, lifters, weightclasses)
+    all_results = opl_results + manual_results
     
-    weight_classes = build_weight_classes(cfg)
-    lifters = Lifters(cfg, credentials)
-    results = Results(cfg, credentials, lifters)
-    records = Records(cfg, credentials, lifters, results)
+    new_records = compute_records(lifters, all_results, weightclasses)
+    tables = render_records(new_records, weightclasses)
+    
+    # dump tables to csv
+    for i, table in enumerate(tables):
+        table.to_csv(f"data/records_{i}.csv")
     
     
     
