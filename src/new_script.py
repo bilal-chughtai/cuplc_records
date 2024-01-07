@@ -9,7 +9,6 @@ from oauth2client.service_account import ServiceAccountCredentials
 import datetime
 import pandas as pd
 
-
 OPL_RENAME_MAP = {
     'BodyweightKg': 'bodyweight',
     'Best3SquatKg': 'squat',
@@ -21,7 +20,6 @@ OPL_RENAME_MAP = {
 }
 
 OPL_RESULTS_COLUMNS = ['id', 'lifter_id', 'student', 'alumni', 'meetName', 'meetDate', 'bodyweight', 'squat', 'bench', 'deadlift', 'total']
-OPL_DROP_COLUMNS = ['Name', 'Sex',	'Event', 'Equipment',	'Age',	'AgeClass',	'BirthYearClass',	'Division',	'WeightClassKg'	,'Squat1Kg',	'Squat2Kg',	'Squat3Kg',	'Squat4Kg',	'Bench1Kg',	'Bench2Kg',	'Bench3Kg',	'Bench4Kg',		'Deadlift1Kg',	'Deadlift2Kg',	'Deadlift3Kg',	'Deadlift4Kg',		'Place',	'Dots',	'Wilks',	'Glossbrenner',	'Goodlift',	'Tested',	'Country',	'State',	'Federation',	'ParentFederation',	'MeetCountry',	'MeetState',	'MeetTown']
 
 SEXES = ['M', 'F']
 STATUSES = ['student', 'alumni']
@@ -65,6 +63,29 @@ def toDate(date_string: str):
     """Converts a date string in the format YYYY-MM-DD to a datetime object"""
     return datetime.strptime(date_string,'%Y-%m-%d')
 
+@dataclass
+class WeightClass:
+    name: str
+    sex: str
+    lower: float
+    upper: float
+
+def build_weight_classes(cfg:Config) -> list[WeightClass]:
+    male_boundaries = cfg.male_classes
+    female_boundaries = cfg.female_classes 
+    classes = []
+    for sex, boundaries in zip(["M, F"], [male_boundaries, female_boundaries]):
+        classes.append(
+            WeightClass(str(boundaries[0]+'kg'), sex, 0, boundaries[0]))
+        for i in range(1,len(boundaries)):
+            classes.append(
+                WeightClass(str(boundaries[i]+'kg'), sex, boundaries[i-1], boundaries[i])
+            )
+        classes.append(
+            WeightClass(boundaries[-1]+'kg+', sex, boundaries[-1], 999)
+        )
+    return classes
+
 class Lifters:
     def __init__(self, cfg: Config, credentials: ServiceAccountCredentials):
         self.cfg = cfg
@@ -83,11 +104,12 @@ class Lifters:
         self.data['skip_opl'] = self.data['skip_opl'].astype(bool)
         
 class Results:
-    def __init__(self, cfg: Config, credentials:ServiceAccountCredentials, lifters: Lifters):
+    def __init__(self, cfg: Config, credentials:ServiceAccountCredentials, lifters: Lifters, weight_classes: list[WeightClass]):
         self.cfg = cfg
         self.lifters = lifters
         self.credentials = credentials
         self.logger = logging.getLogger(__name__)
+        self.weight_classes = weight_classes
         self.load_results_from_opl()
         self.load_manual_results()
         self.data = pd.concat([self.opl_results, self.manual_results])
@@ -99,28 +121,38 @@ class Results:
             return 'alumni'
         return 'none'
     
+    def get_class(self, bodyweight: float, sex: str):
+        for weight_class in self.weight_classes:
+            if sex == weight_class.sex and weight_class.lower < bodyweight <= weight_class.upper:
+                return weight_class.name
+    
     def load_results_from_opl(self):
         frames = []
         for index, lifter in self.lifters.data.iterrows():
-            if not lifter['skip_opl']:
-                df = pd.read_csv(f"https://www.openpowerlifting.org/u/{lifter['id']}/csv")
-
-                # drop equipped comps
-                df.drop(df[df.Equipment!='Raw'].index, inplace=True)
-
-                # rename columns
-                df.rename(mapper=OPL_RENAME_MAP, axis=1, inplace=True)
-
-                # add lifter id and status
-                df['lifter_id'] = lifter['id']
-                df['id']=df['lifter_id']+df['meetDate']
-                
-                # convert dates
-                df['meetDate'] = df['meetDate'].apply(toDate)
-                df['status'] = df.apply(lambda x: self.get_status(x['meetDate'], lifter['matricDate'], lifter['gradDate']), axis=1)
+            if lifter['skip_opl']:
+                continue
             
-                df.drop(columns=OPL_DROP_COLUMNS, inplace=True)
-                frames.append(df)
+            df = pd.read_csv(f"https://www.openpowerlifting.org/u/{lifter['id']}/csv")
+
+            # drop equipped comps
+            df.drop(df[df.Equipment!='Raw'].index, inplace=True)
+
+            # rename columns
+            df.rename(mapper=OPL_RENAME_MAP, axis=1, inplace=True)
+            
+            # drop all columns not in OPL_NAME_MAP.keys()
+            df.drop(columns=[col for col in df.columns if col not in OPL_RESULTS_COLUMNS], inplace=True)
+
+            # add ids
+            df['lifter_id'] = lifter['id']
+            df['id']=df['lifter_id']+df['meetDate']
+            
+            # convert dates and get status and weight class
+            df['meetDate'] = df['meetDate'].apply(toDate)
+            df['status'] = df.apply(lambda x: self.get_status(x['meetDate'], lifter['matricDate'], lifter['gradDate']), axis=1)
+            df['class'] = df.apply(lambda x: self.get_class(x['bodyweight'], lifter['sex']), axis=1)
+            
+            frames.append(df)
 
         self.opl_results = pd.concat(frames)
         
@@ -142,11 +174,54 @@ class Results:
 
         # add status
         manual_results['status'] = manual_results.apply(lambda x: self.get_status(x['meetDate'], x['matricDate'], x['gradDate']), axis=1)
+        manual_results['class'] = manual_results.apply(lambda x: self.get_class(x['bodyweight'], self.lifters.data[self.lifters.data['id']==x['lifter_id']]['sex'].values[0], axis=1))
+    
+class Records:
+    def __init__(self, cfg: Config, credentials:ServiceAccountCredentials, lifters: Lifters, results: Results, weight_classes: list[WeightClass]):
+        self.cfg = cfg
+        self.lifters = lifters
+        self.results = results
+        self.credentials = credentials
+        self.weight_classes = weight_classes
 
+        
+        self.data = self.results.data.merge(results.lifters.data, how="left", left_on="lifter_id", right_on="id")
+        self.record_columns = ['sex', 'status', 'weightclass', 'lift', 'fullName', 'liftKg', 'date']
+        self.statuses = ["student", "alumni"]
+        self.lifts = ["squat", "bench", "deadlift", "total"]
+        self.instantiate_records_df()
+        self.compute_records()
+        self.load_old_records()
+        self.compute_diff()
+        
+    def instantiate_records_df(self):
+        self.new_records = pd.DataFrame(columns=self.record_columns)
+        
+    def compute_records(self):
+        for status in self.statuses:
+            for weight_class in self.weight_classes:
+                sex = weight_class.sex
+                valid_results = self.data[(self.data['status']==status) & (self.data['class']==weight_class.name) & (self.data['sex'] == sex)]
+                for lift in self.lifts:
+                    maxes = valid_results[valid_results[lift]==valid_results[lift].max()]
+                    earliest = maxes[maxes['meetDate']==maxes['meetDate'].min()]
+                    for index,row in earliest.iterrows():
+                        record = [sex, status, weight_class['name'], lift, row['fullName'], row[lift], row['meetDate']]
+                        self.new_records.loc[len(self.new_records)] = record
+    
+    def load_old_records(self):
+        self.old_records = pd.read_csv("data/records.csv")
+    
+    def compute_record_diff
+                
+        
+        
+
+           
+  
+    
       
 def main():
-    logger = logging.getLogger(__name__)
-
     argparser = ArgumentParser()
     argparser.add_argument("--config", type=str, default="config.json")
     args = argparser.parse_args()
@@ -155,6 +230,8 @@ def main():
     
     credentials = get_google_service_account_credentials(cfg)
     
+    
+    weight_classes = build_weight_classes(cfg)
     lifters = Lifters(cfg, credentials)
     results = Results(cfg, credentials, lifters)
     records = Records(cfg, credentials, lifters, results)
