@@ -23,8 +23,6 @@ OPL_RENAME_MAP = {
     'Date': 'meetDate'
 }
 
-OPL_RESULTS_COLUMNS = ['id', 'lifter_id', 'student', 'alumni', 'meetName', 'meetDate', 'bodyweight', 'squat', 'bench', 'deadlift', 'total']
-
 SEXES = ['M', 'F']
 STATUSES = ['student', 'alumni']
 LIFTS = ['squat', 'bench', 'deadlift', 'total']
@@ -304,7 +302,9 @@ def compute_records(lifters: dict[str, Lifter], results: list[Result], weightcla
                 )
                 records.append(record)
     return records
-                      
+
+""" Log and Export """
+                     
 def save_to_file(records: list[Record]):
     # pickle records
     with open('data/records.pickle', 'wb') as f:
@@ -373,6 +373,8 @@ def export_log_and_records(tables: list[pd.DataFrame], log: list[str], cfg: Conf
     record_log = pd.DataFrame(log)
     record_log = record_log.append(old_record_log)
     d2g.upload(record_log, cfg.records_spreadsheet_key, cfg.log_sheet_name, credentials=credentials, start_cell='A2', clean=False, col_names=False, row_names=False)    
+
+""" Main """
 
 def main():
     
