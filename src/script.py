@@ -12,6 +12,7 @@ import pandas as pd
 import os
 import pickle
 import sys
+from typing import Optional
 
 OPL_RENAME_MAP = {
     'BodyweightKg': 'bodyweight',
@@ -68,11 +69,11 @@ def load_config(config_path: str) -> Config:
     logging.info("Config loaded")
     return config
 
-def get_mail_credentials(path:str) -> tuple[str, str]:
+def get_mail_credentials(credential_path:str) -> tuple[str, str]:
     """Get email credentials from a json file path"""
     logger = logging.getLogger(__name__)
     logging.info("Getting email credentials")
-    with open(path, "r") as f:
+    with open(credential_path, "r") as f:
         credentials = json.load(f)
     credentials = (credentials["username"], credentials["password"])
     logging.info("Email credentials loaded")
@@ -163,14 +164,14 @@ class Result:
     weightclass: WeightClass
     
     
-def get_status(meetDate, matricDate, gradDate):
+def get_status(meetDate: datetime, matricDate:datetime, gradDate:datetime) -> str:
     if matricDate <= meetDate <= gradDate:
         return 'student'
     elif gradDate < meetDate:
         return 'alumni'
     return 'none'
 
-def get_weightclass(bodyweight: float, sex: str, weightclasses: list[WeightClass]):
+def get_weightclass(bodyweight: float, sex: str, weightclasses: list[WeightClass]) -> WeightClass:
     for weightclass in weightclasses:
         if sex == weightclass.sex and weightclass.lower < float(bodyweight) and float(bodyweight) <= weightclass.upper:
             return weightclass
@@ -226,7 +227,7 @@ def load_opl_results(lifters: dict[str, Lifter], weight_classes: list[WeightClas
     return results
 
         
-def load_manual_results(cfg: Config, credentials: ServiceAccountCredentials, lifters: dict[str, Lifter], weightclasses: list[WeightClass]):
+def load_manual_results(cfg: Config, credentials: ServiceAccountCredentials, lifters: dict[str, Lifter], weightclasses: list[WeightClass]) -> list[Result]:
     logger = logging.getLogger(__name__)
     
     df = g2d.download(cfg.records_spreadsheet_key, cfg.manual_sheet_name, col_names=True, credentials=credentials)    
@@ -306,12 +307,12 @@ def compute_records(lifters: dict[str, Lifter], results: list[Result], weightcla
 
 """ Log and Export """
                      
-def save_to_file(records: list[Record]):
+def save_to_file(records: list[Record]) -> None:
     # pickle records
     with open('data/records.pickle', 'wb') as f:
         pickle.dump(records, f)
 
-def load_records_from_file():
+def load_records_from_file() -> Optional[list[Record]]:
     if os.path.exists('data/records.pickle'):
         with open('data/records.pickle', 'rb') as f:
             records = pickle.load(f)
@@ -319,7 +320,7 @@ def load_records_from_file():
     else:
         return None
 
-def diff_records(new_records: list[Record], old_records: list[Record]):
+def diff_records(new_records: list[Record], old_records: list[Record]) -> list[str]:
     log = []
     for new_record in new_records:
         # find corresponding old record
