@@ -33,6 +33,7 @@ LIFTS = ['squat', 'bench', 'deadlift', 'total']
 @dataclass
 class Config:
     service_account: str
+    mail_credentials: str
     lifters_spreadsheet_key: str
     lifters_sheet_name: str
     female_weightclasses: list[int]
@@ -371,7 +372,7 @@ def export_log_and_records(tables: list[pd.DataFrame], log: list[str], cfg: Conf
     old_record_log = g2d.download(cfg.records_spreadsheet_key, cfg.log_sheet_name, col_names=False, credentials=credentials, start_cell='A2')
     # append new log to top of old log
     record_log = pd.DataFrame(log)
-    record_log = record_log.append(old_record_log)
+    record_log = pd.concat([record_log, old_record_log])
     d2g.upload(record_log, cfg.records_spreadsheet_key, cfg.log_sheet_name, credentials=credentials, start_cell='A2', clean=False, col_names=False, row_names=False)    
 
 """ Main """
@@ -380,10 +381,12 @@ def main():
     
     logger = logging.getLogger('MyLogger')
     logger.setLevel(logging.ERROR)  # Only log errors and above
-
-    mail_credentials = get_mail_credentials("mail_credentials.json")
+    argparser = ArgumentParser()
+    argparser.add_argument("--config", type=str, default="src/config.json")
+    args = argparser.parse_args()
     
-    # Configure SMTPHandler
+    cfg = load_config(args.config)
+    mail_credentials = get_mail_credentials(cfg.mail_credentials)
     mail_handler = logging.handlers.SMTPHandler(
         mailhost=("smtp.srcf.net", 587),  # Replace with your SMTP server and port
         fromaddr="cuplc-webmaster@srcf.net",  # Your email address
@@ -393,12 +396,8 @@ def main():
         secure=()  # Tuple for secure sending, leave empty for default
     )
     logger.addHandler(mail_handler)
-
-    argparser = ArgumentParser()
-    argparser.add_argument("--config", type=str, default="src/config.json")
-    args = argparser.parse_args()
     
-    cfg = load_config(args.config)
+    
     credentials = get_google_service_account_credentials(cfg)
     weightclasses = build_weight_classes(cfg)
     
