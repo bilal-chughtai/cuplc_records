@@ -133,8 +133,10 @@ dmypy.json
 
 # google service account
 service_account.json
+mail_credentials.json
 
 # data
-record_log.txt
-records.csv
-log.txt
+data/
+
+
+
