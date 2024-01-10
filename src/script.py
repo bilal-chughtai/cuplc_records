@@ -380,7 +380,7 @@ def export_log_and_records(tables: list[pd.DataFrame], log: list[str], cfg: Conf
 
 def main():
     
-    logger = logging.getLogger('MyLogger')
+    logger = logging.getLogger(__name__)
     logger.setLevel(logging.ERROR)  # Only log errors and above
     argparser = ArgumentParser()
     argparser.add_argument("--config", type=str, default="src/config.json")
@@ -393,11 +393,10 @@ def main():
         fromaddr="cuplc-webmaster@srcf.net",  # Your email address
         toaddrs=["cuplc-webmaster@srcf.net"],  # Destination email address
         subject="Error in cuplc-records script",
-        credentials=mail_credentials,  # Specify SMTP credentials
+        credentials=(mail_credentials),  # Specify SMTP credentials
         secure=()  # Tuple for secure sending, leave empty for default
     )
     logger.addHandler(mail_handler)
-    
     # catch any other exception
     try:
         credentials = get_google_service_account_credentials(cfg)
